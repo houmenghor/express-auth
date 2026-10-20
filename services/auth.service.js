@@ -23,29 +23,32 @@ const register = async (body) => {
     // Hash the password
     const hashedPassword = await bcrypt.hash(body.password, 10);
     const otpCode = generateOTP();
+    const hashedOtpCode = await bcrypt.hash(otpCode, 10);
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
 
     const user = await userModel.createUser({
         username: body.username,
         email: body.email,
         password: hashedPassword,
-        otp_code: otpCode,
+        otp_code: hashedOtpCode,
         otp_expires_at: otpExpiresAt
     });
 
-    await mailService.sendOtpEmail(body.email, body.username, otpCode);
+    mailService.sendOtpEmail(body.email, body.username, otpCode);
     return user;
 };
 
 const verifyOtp = async (email, otpCode) => {
-    const user = await userModel.findUserByEmail(email);
+    const user = await userModel.getByEmail(email);
     if (!user) {
         throw new Error('User with this email does not exist');
     }
     if (user.is_active) {
         throw new Error('User is already active');
     }
-    if (user.otp_code !== otpCode) {
+
+    const isOtpMatch = await bcrypt.compare(otpCode, user.otp_code);
+    if (!isOtpMatch) {
         throw new Error('Invalid OTP code');
     }
 
@@ -69,7 +72,7 @@ const resendOtp = async (email) => {
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
 
     await userModel.updateOtp(email, otpCode, otpExpiresAt);
-    await mailService.sendOtpEmail(email, user.username, otpCode);
+    mailService.sendOtpEmail(email, user.username, otpCode);
 };
 
 const login = async (email, password) => {
@@ -90,7 +93,7 @@ const login = async (email, password) => {
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
 
         await userModel.updateOtp(email, otpCode, otpExpiresAt);
-        await mailService.sendOtpEmail(email, user.username, otpCode);
+        mailService.sendOtpEmail(email, user.username, otpCode);
         throw new Error('Account is not active. Please verify your email.');
     }
 
